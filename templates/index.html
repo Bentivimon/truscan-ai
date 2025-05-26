@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TruScanAI</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        background-color: #f5f5f5;
+      }
+
+      h1 {
+        color: #333;
+      }
+
+      label {
+        text-align: start;
+      }
+
+      .tabs {
+        display: flex;
+        padding: 0 30px;
+      }
+
+      .tab {
+        width: 50%;
+        border-radius: 5px;
+        padding: 15px 20px;
+        border: 1px solid gray;
+        cursor: pointer;
+      }
+
+      .tab:first-child {
+        margin-right: 16px;
+      }
+
+      .tab.active {
+        color: white;
+        background-color: #007bff;
+      }
+
+      .tab-content {
+        display: none;
+      }
+
+      .tab-content.active {
+        display: block;
+      }
+
+      .container {
+        background-color: white;
+        padding: 32px;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        width: 500px;
+        text-align: center;
+      }
+
+      .option-wrapper {
+        display: flex;
+        margin: 30px;
+        flex-direction: column;
+      }
+
+      .button {
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        margin-top: 10px;
+      }
+
+      .button:hover {
+        background-color: #45a049;
+      }
+
+      .button-primary {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        margin-top: 10px;
+      }
+
+      .button-primary:hover {
+        background-color: #0062cc;
+      }
+
+      .button-success {
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        margin-top: 10px;
+      }
+
+      .button-success:hover {
+        background-color: #45a049;
+      }
+
+      .button-danger {
+        background-color: #dc3545;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        margin-top: 10px;
+      }
+
+      .button-danger:hover {
+        background-color: #c83140;
+      }
+
+      .response {
+        margin-top: 10px;
+        color: #333;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>TruScanAI</h1>
+    <div class="container">
+      <div class="tabs">
+        <button type="button" id="check-text-tab" onclick="showTab('check-text')" class="tab active">Текст</button>
+        <button type="button" id="check-video-tab" onclick="showTab('check-video')" class="tab">Відео</button>
+      </div>
+
+      <div id="check-text-content" class="tab-content active">
+        <div class="option-wrapper">
+          <label>
+            <input type="radio" name="option" onclick="toggleInput('file')" />
+            Перевірити файл
+            <br />
+            <span style="color: #c20303; font-size: 10px">
+              Обов'язкова наявність колонки з назвою Text та тип файлу - CSV
+            </span>
+          </label>
+          <br />
+          <input type="file" id="fileInput" name="file" accept=".csv" disabled />
+        </div>
+
+        <div class="option-wrapper">
+          <label>
+            <input type="radio" name="option" onclick="toggleInput('text')" />
+            Перевірити текст
+          </label>
+          <br />
+          <textarea id="textInput" rows="3" disabled></textarea>
+          <br />
+          <button class="button-primary" onclick="submitData()">Перевірити</button>
+        </div>
+      </div>
+
+      <div id="check-video-content" class="tab-content">
+        <div class="option-wrapper">
+          <input type="file" id="videoInput" name="file" accept="video/*" />
+          <br />
+          <button class="button-primary" onclick="submitData()">Перевірити</button>
+        </div>
+      </div>
+
+      <div id="response-box" class="response"></div>
+
+      <div id="correct-btn-block"  style="display: none; flex-direction: row-reverse;">
+        <button class="button-success" onclick="showCorrectBlock()">
+          Відповідь не коректна!
+        </button>
+      </div>
+
+      <div id="correct-block" style="display: none; flex-direction: row; justify-content: space-around;">
+        <button class="button-danger" onclick="correctAnswer(false)">
+          Цей текст фейк!
+        </button>
+        <button class="button-primary" onclick="correctAnswer(true)">
+          Цей текст правда!
+        </button>
+      </div>
+
+      <div id="corrected-block" class="response"></div>
+    </div>
+
+    <script>
+      var last_verified_text = null;
+      var saved_video_path;
+      var is_current_tab_video = false;
+      var saved_prediction_result;
+
+      function download(blob, filename) {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.style.display = "none";
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      }
+
+      function toggleInput(type) {
+        const fileInput = document.getElementById("fileInput");
+        const textInput = document.getElementById("textInput");
+        const responseBox = document.getElementById("response-box");
+        const correctedBlock = document.getElementById("corrected-block");
+
+        if (type === "file") {
+          fileInput.disabled = false;
+          textInput.disabled = true;
+          textInput.value = "";
+          responseBox.textContent = "";
+        } else {
+          fileInput.disabled = true;
+          textInput.disabled = false;
+          fileInput.value = "";
+          responseBox.textContent = "";
+        }
+        correctedBlock.textContent = "";
+        last_verified_text = null;
+
+        document.getElementById("correct-block").style.display = "none";
+        document.getElementById("correct-btn-block").style.display = "none";
+      }
+
+      function showCorrectBlock() {
+        const btnBlock = document.getElementById("correct-block");
+        const firstBtnText = is_current_tab_video ? 'Це відео фейк!' : 'Цей текст фейк!';
+        const secondBtnText = is_current_tab_video ? 'Це відео правда!' : 'Цей текст правда!';
+
+        btnBlock.children[0].textContent = firstBtnText;
+        btnBlock.children[1].textContent = secondBtnText;
+
+        document.getElementById("correct-block").style.display = "flex";
+        document.getElementById("correct-btn-block").style.display = "none";
+      }
+
+      async function submitData() {
+        try {
+          const fileInput = document.getElementById("fileInput");
+          const textInput = document.getElementById("textInput");
+          const videoInput = document.getElementById("videoInput");
+          const responseBox = document.getElementById("response-box");
+          const correctedBlock = document.getElementById("corrected-block");
+
+          if (is_current_tab_video) {
+            if (videoInput.files[0]) {
+              const formData = new FormData();
+              const video = videoInput.files[0];
+
+              formData.append("file", video);
+
+              const response = await fetch("/truscanai/process-video/", {
+                method: "POST",
+                body: formData,
+              });
+
+              responseBox.textContent = "Відео успішно оброблено!";
+
+              if (response.status == 200) {
+                const result = await response.json();
+                responseBox.textContent = `Результат перевірки - ${result.prediction_result}`;
+                document.getElementById("correct-block").style.display = "none";
+                document.getElementById("correct-btn-block").style.display = "flex";
+
+                saved_video_path = result.video_path;
+                saved_prediction_result = result.prediction_result;
+              } else {
+                responseBox.textContent = "Виникла помилка, зверніться до підтримки розробки!";
+                document.getElementById("correct-block").style.display = "none";
+              }
+            } else {
+              alert("Завантажте файл чи введіть текст");
+            }
+
+            correctedBlock.textContent = "";
+            return;
+          }
+
+          if (!fileInput.disabled && fileInput.files[0]) {
+            const formData = new FormData();
+            const file = fileInput.files[0];
+
+            formData.append("file", file);
+
+            const response = await fetch("/truscanai/process-csv/", {
+              method: "POST",
+              body: formData,
+              responseType: "blob",
+            });
+
+            responseBox.textContent = "Успішно завершено!";
+
+            if (response.ok) {
+              response
+                .blob()
+                .then((blob) => download(blob, `result_${file.name}`));
+            }
+          } else if (!textInput.disabled && textInput.value) {
+            last_verified_text = textInput.value;
+
+            const response = await fetch("/truscanai/process-text/", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text: textInput.value }),
+            });
+
+            if (response.status == 200) {
+              const result = await response.json();S
+              responseBox.textContent = `Прогнозований відсоток правдивості - ${result.prediction_percent}%`;
+
+              document.getElementById("correct-block").style.display = "none";
+              document.getElementById("correct-btn-block").style.display = "flex";
+
+            } else {
+              responseBox.textContent =
+                "Виникла помилка, зверніться до підтримки розробки!";
+                document.getElementById("correct-block").style.display = "none";
+            }
+          } else {
+            alert("Завантажте файл чи введіть текст");
+          }
+
+          correctedBlock.textContent = "";
+        } catch (e) {
+          responseBox.textContent =
+            "Виникла помилка, зверніться до підтримки розробки";
+        }
+      }
+
+      async function correctAnswer(isCorrect) {
+        if (is_current_tab_video && ((isCorrect && saved_prediction_result === 'REAL') || (!isCorrect && saved_prediction_result === 'FAKE'))) {
+          return;
+        }
+
+        try {
+          const responseBox = document.getElementById("response-box");
+          const correctedBlock = document.getElementById("corrected-block");
+
+          const url = is_current_tab_video ? '/truscanai/correct-video-answer/' : '/truscanai/correct-answer/';
+          const body = is_current_tab_video ? {
+            video_path: saved_video_path,
+            prediction_result: saved_prediction_result
+          } : {
+            text: last_verified_text,
+            corrected_label: isCorrect
+          }
+
+          const response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+          });
+
+          document.getElementById("correct-block").style.display = "none";
+          document.getElementById("correct-btn-block").style.display = "none";
+
+          if (response.status != 200) {
+            responseBox.textContent =
+              "Виникла помилка, зверніться до підтримки розробки!";
+          } else {
+            correctedBlock.textContent = "Дякуємо за виправлення!";
+          }
+        } catch (e) {
+          responseBox.textContent =
+            "Виникла помилка, зверніться до підтримки розробки";
+        }
+      }
+
+      function showTab(id) {
+        document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'))
+        document.getElementById(`${id}-tab`).classList.add('active');
+
+        document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'))
+        document.getElementById(`${id}-content`).classList.add('active');
+
+        document.getElementById("correct-block").style.display = "none";
+        document.getElementById("correct-btn-block").style.display = "none";
+        document.getElementById("response-box").textContent = "";
+
+        is_current_tab_video = id === 'check-video' ? true : false;
+      }
+    </script>
+  </body>
+</html>
